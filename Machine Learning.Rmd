@@ -1,0 +1,239 @@
+---
+title: "Machine Learning and Model Specification Selection"
+author: "JAZIB JAMAL"
+date: "June 15, 2017"
+output: html_document
+---
+
+```{r global_options, include=TRUE}
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE)
+```
+
+## Machine Learning and Cross Validation
+
+
+###1. **Random Splitting (Holdout Sample)**
+
+1.1 Using the same **Salaries{car}** data set, load and attach the data set (i.e., attach(Salaries)) into your work environment.
+
+```{r}
+library(car)
+data("Salaries")
+head(Salaries, n=4)
+```
+    
+1.2 Enter "set.seed(15)" so that you get the same results if you run your cross validation commands multiple times. Then create an index vector called **"train"** which you can use to split the data set into 80% train and 20% test subsets.
+
+```{r}
+set.seed(15)
+train <- sample(1:nrow(Salaries), 0.8*nrow(Salaries))
+```
+
+```{r}
+length(train) #To ensure coorect number of observations generated
+```
+
+1.3 Fit a linear model to predict **salary** using all remaining variables as predictors, using the train data subset. Store your resulting model in an object named **fit.train** and display the **summary** results.
+
+```{r}
+fit.train <- lm(salary ~ ., data = Salaries, subset = train)
+summary(fit.train)
+```
+
+1.4 Using the **fit.train** model, compute the MSE for the full data set and for the train and test subsets. Store the results in objects named full.mse, train.mse and test.mse, respectively. Then, use the c() function to display these three results with their respective labels "Full MSE", "Train MSE" and "Test MSE"
+
+```{r}
+full.mse <- mean((Salaries$salary-predict(fit.train,Salaries))^2)
+train.mse <- mean((Salaries$salary-predict(fit.train, Salaries))[train]^2)
+test.mse <- mean((Salaries$salary-predict(fit.train, Salaries))[-train]^2)
+mse.all <- c("Full MSE" = full.mse, "Train MSE"= train.mse, "Test MSE"=test.mse)
+mse.all
+```
+
+**[For you only]:** Do this in the R Console, but don't include in the script. The MSE formulas above are some times difficult to parse. One way to understand what is going on is to run parts of the formula in the R Console one at a time and see what you get. I suggest running the predict() function first with all the data and see what you get. Then do the same for the train subset. Then subtract these predictions from the actual values in salary and see what you get (you should get a vector with the residuals). Then do the same for the test subset. Then display the squared values (you'll get a vector again). Then run the mean() function to get the mean of all the squared residuals in the vector.
+
+1.5 Analyze the difference between these MSE values and briefly comment on your conclusions. Is this what you expected? Why or why not?
+
+```{r}
+#The results are exactly as expected. 
+#The Train MSE is lowest because it is tested by the same data on which the machine learned the model. The test-mse will always be higher than Train MSE because it tests new data on the model which is trained using the training-data. 
+#The full-mse uses full data including both the training and test data which is why its value is between both. Under this logic, all values clear.
+```
+
+**[For you only]: Without re-knitting your HTML file**, try changing the seed to 1 and re-fitting your model and re-calculating the MSE's. Are these new results what you expected. If you did things correctly, you will see a Testing MSE smaller than the Train MSE, which is very strange. But this illustrates the randomness of the process when we use random number generators to split our data set. This should make it very obvious that re-sampling several times is an important aspect of cross validation in machine learning in order to get reliable results.
+
+###2. K-Fold Cross (KFCV)** and Leave On Out Cross Validation (LOOCV)
+
+2.1  Using the **Salaries{car}** data set, fit a **GLM** model to predict salary using all predictors. Display the summary results. Store the results in an object named **glm.fit**. Tip: when you use the glm() function you need to specify the family and the link function. However, if you don't specify a family, the "gaussian" family (i.e., normal distribution) and the "identity" link (i.e., no transformation of the response variable) will be used as defaults. So just use the glm() function exactly how you use the lm() function and the result will be an OLS model.
+
+```{r}
+glm.fit <- glm(salary~., data = Salaries)
+summary(glm.fit)
+```
+
+2.3 Using the **cv.glm(){boot}** function and the glm.fit object above, compute and display the **LOOCV MSE** (Leave One Out) for this model (stored in the first attribute of the "delta" attribute. <span style="color:blue">*Technical note: since glm() and lm() can both fit OLS models, some times it is convenient to use one or the other because other useful libraries and functions need either glm or lm objects specifically; this is one of these cases -- the cv.glm() function only works with glm() objects. However, if you are interested in R-Squares and F-Statistics you and run the same model with lm() and you should get the same results.*</span>
+
+```{r}
+library(boot) 
+cv.glm <- cv.glm(Salaries,glm.fit) 
+cv.glm$delta [1]
+```
+
+2.4 Using the same **cv.glm(){boot}** function and **glm.fit** model object, compute and display the **10-Fold** cross validation MSE for this model. 
+
+```{r}
+cv.10K <- cv.glm(Salaries, glm.fit, K=10)
+cv.10K$delta [1]
+```
+
+2.5 Compare the differences between the **10FCV** result above and this **LOOCV** result and provide a brief concluding comment. Is there a meaning to the difference between these 2 MSE values? Please explain why or why not.
+
+```{r}
+mse.both = c("MSE LOOCV"=cv.glm$delta[1], "MSE 10FCV"=cv.10K$delta[1])
+mse.both
+
+#The models performed almost similarly, but the 10-Fold CV only requires 10 regression model estimations, whereas LOOCV requires one for each data point. Hence it is computationally convenient to use 10FCV.
+
+```
+
+
+## Model Variable Selection
+
+
+### 3. Collinearity Analysis
+
+**[For you only]**: Review the documentation for the College{ISLR} data set. View the data set and familiarize yourself with the data. Do this in the R Console, not in the script
+
+3.1 Fit a full model to predict **applications** using all remaining variables as predictors and name it **lm.fit.all**. 
+
+<font color="red">**IMPORTANT**</font>: the colldiag() function you will use shortly sometimes fails when knitting with the ~ in the lm() function, which includes all variables. It works better if you type in all variables like this (you can copy/paste this):
+
+lm.fit.all <- lm(Apps~Accept+Enroll+Top10perc+Top25perc+F.Undergrad+P.Undergrad+Outstate+Room.Board+Books+Personal+PhD+Terminal+S.F.Ratio+perc.alumni+Expend+Grad.Rate, College)
+
+Note in this script, but go to the R Console and Get the Condition Index (CI) statistics for this model using the colldiag(){perturb} function. Use the attributes scale=FALSE, center=FALSE, add.intercept=TRUE.
+
+```{r}
+library(ISLR)
+data("College")
+lm.fit.all <- lm(Apps~Accept+Enroll+Top10perc+Top25perc+F.Undergrad+P.Undergrad+Outstate+Room.Board+Books+Personal+PhD+Terminal+S.F.Ratio+perc.alumni+Expend+Grad.Rate, data= College)
+library(perturb)
+collin.diag = colldiag(mod=lm.fit.all, scale=FALSE, center=FALSE, add.intercept=TRUE)
+collin.diag
+```
+
+3.2 Does the CI provide evidence of severe multicollinearity with the model? Why or why not?
+
+```{r}
+#We know that CI < 30 no problem, 30 < CI < 50 some concern, CI > 50 severe, no good. Here we can see that, yes there is evidence of severe multicollinearity, as values are >50.
+
+```
+
+3.3 Run the same colldiag() diagnostic, but first using **scale=FALSE, center=TRUE, add.intercept=FALSE** and then again using **scale=TRUE, center=TRUE, add.intercept=FALSE**. How do your results change. Please explain why these results changed, if they did? 
+
+```{r}
+collin.diag1 = colldiag(mod=lm.fit.all, scale=FALSE, center=TRUE, add.intercept=FALSE)
+collin.diag2 = colldiag(mod=lm.fit.all, scale=TRUE, center=TRUE, add.intercept=FALSE)
+collin.diag1
+collin.diag2
+```
+
+
+3.4 Display the lm.fit model summary results and the variance inflation factors **(VIF's)** for the predictors in the model.
+
+```{r}
+summary(lm.fit.all)
+library(car)
+vif(lm.fit.all) 
+```
+
+3.5 Briefly answer: based on your VIF results, is multicollinearity a problem? Why or why not? If so, which variables pose the main problem?
+
+```{r}
+#There is multicollinearity problem. We know that 10<VIF -- The variable contributes significantly to collinearity. The coefficients have a high standard error and are unstable and unreliable.
+#Here F.Undergrad and Enroll, both are above the threshold. While remaining are all moderately correlated.
+```
+
+3.6 Fit a **reduced** model to predict **Apps** on **Enroll** and **Top10perc only**. Name it **lm.fit.reduced**. Display the CI (using **scale=TRUE, center=TRUE, add.intercept=FALSE**), model summary results and the VIF's.
+
+```{r}
+lm.fit.reduced <- lm(Apps~ Enroll+Top10perc, data = College)
+collin.diag.reduced = colldiag(lm.fit.reduced, scale=TRUE, center=TRUE, add.intercept=FALSE)
+collin.diag.reduced
+summary(lm.fit.reduced)
+vif(lm.fit.reduced)
+```
+
+3.7 Is there a multicollinearity issue in the model above? Why or why not?
+
+```{r}
+#In the reduced model above the multicollinearity does not exist. The CI and VIF values are very low which shows that this problem does not exist for this model.
+```
+
+###4. Variable Selection: Subset Comparison
+
+4.1 Fit a **large** model with all variables that make sense from a business standpoint: Enroll, Top10perc, Outstate, Room.Board, PhD, S.F.Ratio, Expend and Grad.Rate. Name this model **lm.fit.large**. Display the model summary results.
+
+```{r}
+lm.fit.large <- lm(Apps~ Enroll+ Top10perc + Room.Board + PhD + S.F.Ratio + Outstate + Expend + Grad.Rate, College)
+summary(lm.fit.large)
+```
+
+4.2 Then, compute the VIF's for this large model and then conduct an **ANOVA F** test to evaluate if the larger model has more predictive power than the **lm.fit.reduced** model above. Provide your brief conclusions about what these two tests are telling you and pick a model based on this analysis.
+
+```{r}
+anova(lm.fit.reduced, lm.fit.large)
+#These two tests are telling that the lm.fit.large model has more reliability and it explains the variance more, while being statistically significant. Hence we will choose the larger model over the reduced model.
+```
+
+4.3 **Best Subset Selection**. Fit the same **lm.fit.large** model above, but this time use the **regsubsets(){leaps}** function. Store the model summary results **summary(lm.fit.large)** in an object named **large.sum** (please note that we are storing the summary() object, not the lm() object). Display **fit.large.sum** to see all 8 models evaluated by regsubsets(). 
+
+One nice thing about the regsubsets() function is that it provides various fit statistics for all the models tried. In this case, the default is 8 models (from 1 to 8 predictors), so the **fit.large.sum\$rss** and **fit.large.sum\$adjr2** attributes contain 2 vectors with 8 elements each, containing the RSS and Adjusted R-Squared for each of the 8 models.
+
+Display these RSS and AdjR2 values as a table by binding the 2 vectors with the cbind() function and naming the two columns "RSS" and "AdjR2" respectively.
+
+```{r}
+library(leaps)
+regfit.full=regsubsets(Apps~ Enroll+ Top10perc + Room.Board + PhD + S.F.Ratio + Outstate + Expend + Grad.Rate, College) # Fit the full model
+large.sum <-summary(regfit.full)
+cbind("RSS" = large.sum$rss, "Adjr2" = large.sum$adjr2)
+
+large.sum
+
+```
+
+4.4 Plot these **RSS** and **AdjR2** side by side. Tip: (1) start with par(mfrow=c(1,2)) to split the display into 1 row and 2 columns; (2) then use the plot() functions with appropriate labels and use the attribute type="l" to get a line; (3) then reset the display to a single plot with par(mfrow=c(1,1)). Based on your plot, which is the best model? Fit an lm() model with the predictors in your selected best model and display the summary() results.
+
+```{r}
+par(mfrow=c(1,2))
+plot(large.sum$rss, xlab = "No. of variables", ylab = "RSS", type ="l")
+plot(large.sum$adjr2, xlab = "No. of variables", ylab = "Adjusted R^2", type ="l")
+```
+The best model is lm.fit.large because the adjR^2 increases dramatically as we increase values from 2 to 4, after which the slope decreases. Also, it is statistically significant (f-test) due to which we believe the added variables are significant too.
+
+```{r}
+par(mfrow=c(1,1))
+summary(lm(Apps~ Enroll + Room.Board + Expend + Grad.Rate, College))
+```
+
+4.5 Let's try a couple of **Stepwise** approaches to variable selection using the step(){stats} function. For both approaches, do a stepwise to select the optimal model between **lm.fit.reduced** and **lm.fit.large** (tip: the scope=list() functions should have the same scope for both models, from the lower bound model of lm.fit.reduced to the upper bound model of lm.fit.large). Also, in both cases, use direction="both" (for stepwise) and test="F" to get p-values for the predictors.
+
+Name the first model **lm.step.forward** and use the **lm.fit.reduced** model as the starting base. Name the second model **lm.step.back**, use the **lm.fit.large** model as the starting base (Tip: the first approach will start with the reduced model and proceed forward towards the large model, but in a stepwise fashion. The second approach will start with the large model and proceed backwards towards the reduced model, but in a stepwise fashion).
+
+After you model both stepwise approaches, display the summary() for both models.
+
+```{r}
+library(HH)
+lm.fit.forward <- step(lm.fit.reduced, scope=list(lower=lm.fit.reduced, upper=lm.fit.large), direction="both", test="F")
+lm.fit.back <- step(lm.fit.large, scope=list(lower=lm.fit.reduced, upper=lm.fit.large), direction="both", test="F")
+summary(lm.fit.forward)
+summary(lm.fit.back)
+```
+
+4.6 Compare the two stepwise results above. Is there any difference? Also, compare your stewise model selection with the model selected above in 4.3 using regsubsets(). Are the models different? Which one would you pick? Is there an additional test to select the best of these models (no need to run the test, just answer the question)
+
+```{r}
+The results are similar for both but the methodology is different. "Backward" starts with full predictors while "forward" starts with most-significant predictor.
+```
+I will pick forward-stepwise. Backward selection requires that the number of samples n, is greater than less than variables. It starts off with a larger formula, hence requires more computational power.
+COMPARING it with model selected in 4.3, we can see that all variables selected are significant with the highest value for adjR^2 which tells us that this is a better model.
+Another test is the cross validation test.
